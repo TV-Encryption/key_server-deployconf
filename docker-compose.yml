@@ -1,0 +1,85 @@
+version: '3.8'
+
+volumes:
+  local_postgres_data: {}
+
+services:
+  django: &django
+    build:
+      context: ./key_server
+      dockerfile: ./docker/Dockerfile
+      target: prod-django
+    image: key_server_local_django
+    restart: always
+    depends_on:
+      - postgres
+      - celerybeat
+      - celeryworker
+      - mailhog
+    environment:
+      # General
+      - DJANGO_DEBUG=False
+      - IPYTHONDIR=/app/.ipython
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      # General
+      - DJANGO_SETTINGS_MODULE=config.settings.base
+      - DJANGO_SECRET_KEY
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
+      # Email
+      - EMAIL_HOST=mailhog
+      - EMAIL_PORT=1025
+      # Postgres
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-key_server}
+      - POSTGRES_USER=${POSTGRES_USER:-key_server}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-key_server}
+    ports:
+      - "127.0.0.1:${EXTERNAL_PORT_DJANGO:-5000}:5000"
+
+  postgres:
+    image: postgres:12.3
+    restart: always
+    volumes:
+      - local_postgres_data:/var/lib/postgresql/data:Z
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-key_server}
+      - POSTGRES_USER=${POSTGRES_USER:-key_server}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-key_server}
+
+  mailhog:
+    restart: always
+    image: mailhog/mailhog:v1.0.0
+
+  redis:
+    restart: always
+    image: redis:5.0
+
+  celeryworker:
+    <<: *django
+    image: key_server_local_celeryworker
+    build:
+      context: ./key_server
+      dockerfile: ./docker/Dockerfile
+      target: prod-worker
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
+
+  celerybeat:
+    <<: *django
+    image: key_server_local_celerybeat
+    build:
+      context: ./key_server
+      dockerfile: ./docker/Dockerfile
+      target: prod-beat
+    depends_on:
+      - redis
+      - postgres
+      - mailhog
+    ports: []
